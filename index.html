@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>حجز العيادات</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <h1>حجز العيادات</h1>
+    </header>
+
+    <nav class="steps">
+      <button class="step active" data-step="1"><span>اسم</span> 👤</button>
+      <button class="step" data-step="2"><span>مرض</span> 🩺</button>
+      <button class="step" data-step="3"><span>تاريخ</span> 📅</button>
+      <button class="step" data-step="4"><span>وقت / مدة</span> ⏱️</button>
+      <button class="step" data-step="5"><span>تأكيد</span> ✅</button>
+    </nav>
+
+    <main class="layout">
+      <section class="card form-card">
+        <!-- Step 1 -->
+        <div class="step-panel active" data-panel="1">
+          <h2>البيانات الشخصية</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>الاسم الكامل *</label>
+              <input type="text" id="fullName" placeholder="أدخل الاسم الكامل" />
+            </div>
+            <div class="field">
+              <label>رقم الهوية / الإقامة *</label>
+              <input type="text" id="idNumber" placeholder="أدخل رقم الهوية أو الإقامة" />
+            </div>
+            <div class="field">
+              <label>تاريخ الميلاد *</label>
+              <input type="date" id="birthDate" />
+            </div>
+            <div class="field">
+              <label>رقم الجوال *</label>
+              <input type="tel" id="phone" placeholder="05xxxxxxxx" />
+            </div>
+            <div class="field">
+              <label>الجنس *</label>
+              <select id="gender">
+                <option value="">اختر الجنس</option>
+                <option value="ذكر">ذكر</option>
+                <option value="أنثى">أنثى</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>البريد الإلكتروني (اختياري)</label>
+              <input type="email" id="email" placeholder="example@email.com" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-panel" data-panel="2">
+          <h2>المرض / التخصص</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>التخصص *</label>
+              <select id="specialty">
+                <option value="">اختر التخصص</option>
+                <option>باطنية</option>
+                <option>أسنان</option>
+                <option>جلدية</option>
+                <option>عظام</option>
+                <option>أطفال</option>
+                <option>نساء وولادة</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>وصف الحالة</label>
+              <textarea id="condition" rows="3" placeholder="اكتب وصفاً مختصراً للحالة"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-panel" data-panel="3">
+          <h2>التاريخ</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>تاريخ الموعد *</label>
+              <input type="date" id="appointmentDate" />
+            </div>
+            <div class="field">
+              <label>العيادة / الطبيب *</label>
+              <select id="doctor">
+                <option value="">اختر الطبيب</option>
+                <option>د. أحمد السالم</option>
+                <option>د. منى الفهد</option>
+                <option>د. خالد الزهراني</option>
+                <option>د. سارة العتيبي</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="step-panel" data-panel="4">
+          <h2>الوقت والمدة</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>الوقت *</label>
+              <input type="time" id="appointmentTime" />
+            </div>
+            <div class="field">
+              <label>المدة (دقيقة) *</label>
+              <select id="duration">
+                <option value="15">15</option>
+                <option value="30" selected>30</option>
+                <option value="45">45</option>
+                <option value="60">60</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 5 -->
+        <div class="step-panel" data-panel="5">
+          <h2>تأكيد الحجز</h2>
+          <p class="muted">راجع التفاصيل في الملخص جانباً ثم اضغط حفظ.</p>
+          <div class="field">
+            <label>ملاحظات</label>
+            <textarea id="notes" rows="3" placeholder="ملاحظات إضافية"></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" id="prevBtn">السابق</button>
+          <button class="btn primary" id="nextBtn">التالي →</button>
+          <button class="btn success" id="saveBtn" style="display:none">💾 حفظ الحجز</button>
+        </div>
+      </section>
+
+      <aside class="card summary-card">
+        <div class="summary-header">ملخص الحجز</div>
+        <ul class="summary-list">
+          <li><span class="label">الاسم:</span> <span id="sName">-</span></li>
+          <li><span class="label">المرض:</span> <span id="sCondition">-</span></li>
+          <li><span class="label">التاريخ:</span> <span id="sDate">-</span></li>
+          <li><span class="label">الوقت / المدة:</span> <span id="sTime">-</span></li>
+          <li><span class="label">العيادة / الطبيب:</span> <span id="sDoctor">-</span></li>
+        </ul>
+        <div class="summary-note" id="summaryNote">📅 لم يتم اختيار موعد بعد</div>
+      </aside>
+    </main>
+
+    <section class="bookings card">
+      <div class="bookings-header">
+        <h2>سجل الحجوزات</h2>
+        <input type="search" id="searchInput" placeholder="🔍 بحث بالاسم أو الهاتف" />
+      </div>
+      <div class="table-wrap">
+        <table id="bookingsTable">
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>الجوال</th>
+              <th>الطبيب</th>
+              <th>التاريخ</th>
+              <th>الوقت</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="emptyMsg">لا توجد حجوزات بعد.</p>
+      </div>
+    </section>
+
+    <section class="suggestions">
+      <h3>مقترحات إضافية للتحسين</h3>
+      <div class="suggest-grid">
+        <div class="suggest"><div class="icon">📅</div><h4>اختيار العيادة / الطبيب</h4><p>عرض قائمة بالأطباء والعيادات المتاحة مع تقييم ومدة الانتظار.</p></div>
+        <div class="suggest"><div class="icon">⏱️</div><h4>اختيار الوقت المتاح</h4><p>عرض المواعيد المتاحة بشكل زمني لتسهيل الاختيار.</p></div>
+        <div class="suggest"><div class="icon">💳</div><h4>الدفع المسبق (اختياري)</h4><p>إتاحة الدفع الإلكتروني لتأكيد الحجز وتوفير الوقت.</p></div>
+        <div class="suggest"><div class="icon">📋</div><h4>سجل الحجوزات</h4><p>عرض الحجوزات السابقة وإعادة الحجز بسهولة.</p></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
