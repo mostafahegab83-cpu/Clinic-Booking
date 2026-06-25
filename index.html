@@ -1,13 +1,321 @@
+`reports.js`
+
+```javascript
+// ============ Reports Dashboard ============
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+const bookings = JSON.parse(localStorage.getItem('clinic_bookings_v1') || '[]');
+const auditLog = JSON.parse(localStorage.getItem('clinic_audit_v1') || '[]');
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function num(v) { return Number(v) || 0; }
+
+// ---------- Filters ----------
+function getFiltered() {
+  const from = $('#fFrom').value, to = $('#fTo').value;
+  const doc = $('#fDoctor').value, pay = $('#fPayment').value, st = $('#fStatus').value;
+  return bookings.filter(b => {
+    if (from && (b.appointmentDate || '') < from) return false;
+    if (to && (b.appointmentDate || '') > to) return false;
+    if (doc && b.doctor !== doc) return false;
+    if (pay && b.paymentMethod !== pay) return false;
+    if (st && (b.status || 'مجدول') !== st) return false;
+    return true;
+  });
+}
+
+function populateDoctorFilter() {
+  const docs = [...new Set(bookings.map(b => b.doctor).filter(Boolean))];
+  $('#fDoctor').innerHTML = '<option value="">الكل</option>' +
+    docs.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+}
+
+['#fFrom','#fTo','#fDoctor','#fPayment','#fStatus','#scheduleGroup'].forEach(s => {
+  document.addEventListener('change', e => { if (e.target.matches(s)) renderAll(); });
+});
+$('#clearF').addEventListener('click', () => {
+  ['#fFrom','#fTo','#fDoctor','#fPayment','#fStatus'].forEach(s => $(s).value = '');
+  renderAll();
+});
+
+// ---------- Tabs ----------
+$$('#tabs .tab').forEach(t => t.addEventListener('click', () => {
+  $$('#tabs .tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  $$('.report-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === t.dataset.tab));
+}));
+
+// ---------- Chart Helpers ----------
+const charts = {};
+function makeChart(id, type, labels, datasets, opts={}) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type, data: { labels, datasets },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}, ...opts }
+  });
+}
+
+// ---------- KPIs ----------
+function renderKpis(rows) {
+  const revenue = rows.reduce((s,b) => s + num(b.amount), 0);
+  const attended = rows.filter(b => b.status === 'حضر').length;
+  const noShow = rows.filter(b => b.status === 'لم يحضر').length;
+  $('#kpiTotal').textContent = rows.length;
+  $('#kpiRevenue').textContent = revenue.toLocaleString();
+  $('#kpiAttended').textContent = attended;
+  $('#kpiNoShow').textContent = noShow;
+  $('#kpiConversion').textContent = rows.length ? ((attended/rows.length)*100).toFixed(1)+'%' : '0%';
+  $('#kpiNoShowRate').textContent = rows.length ? ((noShow/rows.length)*100).toFixed(1)+'%' : '0%';
+}
+
+// ---------- 1. Schedule ----------
+function groupKey(date, mode) {
+  if (!date) return '-';
+  const d = new Date(date);
+  if (mode === 'month') return date.slice(0,7);
+  if (mode === 'week') {
+    const onejan = new Date(d.getFullYear(),0,1);
+    const week = Math.ceil((((d - onejan)/86400000) + onejan.getDay()+1)/7);
+    return `${d.getFullYear()}-W${String(week).padStart(2,'0')}`;
+  }
+  return date;
+}
+function renderSchedule(rows) {
+  const mode = $('#scheduleGroup').value;
+  const buckets = {};
+  rows.forEach(b => {
+    const k = groupKey(b.appointmentDate, mode);
+    buckets[k] = (buckets[k] || 0) + 1;
+  });
+  const labels = Object.keys(buckets).sort();
+  const data = labels.map(l => buckets[l]);
+  makeChart('scheduleChart', 'line', labels, [{
+    label:'عدد المواعيد', data, borderColor:'#2c4cdf', backgroundColor:'rgba(44,76,223,0.2)', tension:0.3, fill:true
+  }]);
+  const tbl = {};
+  rows.forEach(b => {
+    const k = `${b.appointmentDate}||${b.doctor}`;
+    tbl[k] = (tbl[k] || 0) + 1;
+  });
+  const trs = Object.entries(tbl).sort().map(([k,v]) => {
+    const [d,doc] = k.split('||');
+    return `<tr><td>${esc(d)}</td><td>${esc(doc)}</td><td>${v}</td></tr>`;
+  }).join('');
+  $('#scheduleTable tbody').innerHTML = trs;
+}
+
+// ---------- 2. Doctor Performance ----------
+function renderDoctor(rows) {
+  const map = {};
+  rows.forEach(b => {
+    const d = b.doctor || '-';
+    if (!map[d]) map[d] = { patients: new Set(), revenue: 0, count: 0 };
+    map[d].patients.add(b.phone || b.fullName);
+    map[d].revenue += num(b.amount);
+    map[d].count++;
+  });
+  const labels = Object.keys(map);
+  const counts = labels.map(d => map[d].count);
+  makeChart('doctorChart', 'bar', labels, [{
+    label:'عدد المرضى', data: counts, backgroundColor:'#2c4cdf'
+  }]);
+  $('#doctorTable tbody').innerHTML = labels.map(d =>
+    `<tr><td>${esc(d)}</td><td>${map[d].count}</td><td>${map[d].revenue.toLocaleString()}</td></tr>`
+  ).join('');
+}
+
+// ---------- 3. Revenue ----------
+function renderRevenue(rows) {
+  const byDate = {};
+  rows.forEach(b => {
+    const k = b.appointmentDate || '-';
+    byDate[k] = (byDate[k] || 0) + num(b.amount);
+  });
+  const labels = Object.keys(byDate).sort();
+  const data = labels.map(l => byDate[l]);
+  makeChart('revenueChart', 'line', labels, [{
+    label:'الإيراد (ج.م)', data, borderColor:'#16a34a', backgroundColor:'rgba(22,163,74,0.2)', tension:0.3, fill:true
+  }]);
+  const tbl = {};
+  rows.forEach(b => {
+    const k = `${b.appointmentDate}||${b.doctor}`;
+    tbl[k] = (tbl[k] || 0) + num(b.amount);
+  });
+  $('#revenueTable tbody').innerHTML = Object.entries(tbl).sort().map(([k,v]) => {
+    const [d,doc] = k.split('||');
+    return `<tr><td>${esc(d)}</td><td>${esc(doc)}</td><td>${v.toLocaleString()}</td></tr>`;
+  }).join('');
+}
+
+// ---------- 4. Payment ----------
+function renderPayment(rows) {
+  const map = {};
+  rows.forEach(b => {
+    const k = b.paymentMethod || '-';
+    if (!map[k]) map[k] = { count:0, amount:0 };
+    map[k].count++;
+    map[k].amount += num(b.amount);
+  });
+  const labels = Object.keys(map);
+  const data = labels.map(l => map[l].count);
+  makeChart('paymentChart', 'pie', labels, [{
+    data, backgroundColor:['#2c4cdf','#16a34a','#f59e0b','#dc2626','#8b5cf6']
+  }]);
+  $('#paymentTable tbody').innerHTML = labels.map(l =>
+    `<tr><td>${esc(l)}</td><td>${map[l].count}</td><td>${map[l].amount.toLocaleString()}</td></tr>`
+  ).join('');
+}
+
+// ---------- 5. Patient Activity ----------
+function renderPatient(rows) {
+  const map = {};
+  rows.forEach(b => {
+    const k = b.phone || b.fullName;
+    if (!map[k]) map[k] = { name: b.fullName, phone: b.phone, count: 0 };
+    map[k].count++;
+  });
+  const list = Object.values(map).sort((a,b) => b.count - a.count);
+  $('#patientTable tbody').innerHTML = list.map(p =>
+    `<tr><td>${esc(p.name)}</td><td>${esc(p.phone)}</td><td>${p.count}</td><td>${p.count>1?'متكرر':'جديد'}</td></tr>`
+  ).join('');
+}
+
+// ---------- 6. No-Show ----------
+function renderNoShow(rows) {
+  const ns = rows.filter(b => b.status === 'لم يحضر');
+  $('#noshowTable tbody').innerHTML = ns.map(b =>
+    `<tr><td>${esc(b.fullName)}</td><td>${esc(b.doctor)}</td><td>${esc(b.appointmentDate)}</td><td>${esc(b.status)}</td></tr>`
+  ).join('') || '<tr><td colspan="4" style="text-align:center;color:#888">لا توجد حالات</td></tr>';
+}
+
+// ---------- 7. Contact ----------
+function renderContact(rows) {
+  const map = {};
+  rows.forEach(b => {
+    const k = b.phone || b.fullName;
+    if (!map[k] || (b.appointmentDate || '') > (map[k].lastDate || '')) {
+      map[k] = { name: b.fullName, phone: b.phone, lastDate: b.appointmentDate };
+    }
+  });
+  $('#contactTable tbody').innerHTML = Object.values(map).map(p =>
+    `<tr><td>${esc(p.name)}</td><td>${esc(p.phone)}</td><td>${esc(p.lastDate)}</td></tr>`
+  ).join('');
+}
+
+// ---------- 8. Audit ----------
+function bookingInfo(id, fallbackName) {
+  const b = bookings.find(x => String(x.id) === String(id));
+  return {
+    name: b?.fullName || b?.patientName || b?.name || fallbackName || '-',
+    contact: b?.phone || b?.mobile || b?.contact || '-'
+  };
+}
+function renderAudit() {
+  const rows = [...auditLog].reverse();
+  $('#auditTable tbody').innerHTML = rows.map(a => {
+    const info = bookingInfo(a.bookingId, a.details);
+    return `<tr><td>${esc(a.action)}</td><td>${esc(a.user)}</td><td>${new Date(a.timestamp).toLocaleString('ar-EG')}</td><td>${esc(info.name)}</td><td>${esc(info.contact)}</td><td>${esc(a.details||'')}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#888">لا توجد سجلات</td></tr>';
+}
+
+// ---------- 9. Conversion ----------
+function renderConversion(rows) {
+  const total = rows.length;
+  const attended = rows.filter(b => b.status === 'حضر').length;
+  const noShow = rows.filter(b => b.status === 'لم يحضر').length;
+  const rate = total ? (attended/total*100).toFixed(1) : 0;
+  $('#cTotal').textContent = total;
+  $('#cAttended').textContent = attended;
+  $('#cNoShow').textContent = noShow;
+  $('#cRate').textContent = rate + '%';
+  makeChart('conversionChart', 'pie',
+    ['حضر','لم يحضر','أخرى'],
+    [{ data: [attended, noShow, total-attended-noShow], backgroundColor:['#16a34a','#dc2626','#9ca3af'] }]
+  );
+}
+
+// ---------- Export ----------
+function exportSheet(rows, name) {
+  if (!window.XLSX) { alert('تعذر تحميل Excel'); return; }
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, name.slice(0,30));
+  XLSX.writeFile(wb, `${name}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-export]');
+  if (!btn) return;
+  const rows = getFiltered();
+  const t = btn.dataset.export;
+  if (t === 'schedule') {
+    const mode = $('#scheduleGroup').value;
+    const m = {};
+    rows.forEach(b => { const k=groupKey(b.appointmentDate,mode); m[k]=(m[k]||0)+1; });
+    exportSheet(Object.entries(m).map(([k,v])=>({'الفترة':k,'عدد المواعيد':v})), 'schedule');
+  } else if (t === 'doctor') {
+    const map = {};
+    rows.forEach(b => { const d=b.doctor||'-'; if(!map[d])map[d]={c:0,r:0}; map[d].c++; map[d].r+=num(b.amount); });
+    exportSheet(Object.entries(map).map(([d,v])=>({'الطبيب':d,'عدد المرضى':v.c,'الإيرادات':v.r})), 'doctor_performance');
+  } else if (t === 'revenue') {
+    const map={}; rows.forEach(b=>{const k=`${b.appointmentDate}|${b.doctor}`;map[k]=(map[k]||0)+num(b.amount);});
+    exportSheet(Object.entries(map).map(([k,v])=>{const[d,doc]=k.split('|');return{'التاريخ':d,'الطبيب':doc,'الإيراد':v};}),'revenue');
+  } else if (t === 'payment') {
+    const map={}; rows.forEach(b=>{const k=b.paymentMethod||'-';if(!map[k])map[k]={c:0,a:0};map[k].c++;map[k].a+=num(b.amount);});
+    exportSheet(Object.entries(map).map(([k,v])=>({'طريقة الدفع':k,'العدد':v.c,'الإجمالي':v.a})), 'payment');
+  } else if (t === 'patient') {
+    const map={}; rows.forEach(b=>{const k=b.phone||b.fullName;if(!map[k])map[k]={name:b.fullName,phone:b.phone,c:0};map[k].c++;});
+    exportSheet(Object.values(map).map(p=>({'الاسم':p.name,'الجوال':p.phone,'عدد الزيارات':p.c,'النوع':p.c>1?'متكرر':'جديد'})), 'patients');
+  } else if (t === 'noshow') {
+    exportSheet(rows.filter(b=>b.status==='لم يحضر').map(b=>({'الاسم':b.fullName,'الطبيب':b.doctor,'التاريخ':b.appointmentDate,'الحالة':b.status})), 'noshow');
+  } else if (t === 'contact') {
+    const map={}; rows.forEach(b=>{const k=b.phone||b.fullName;if(!map[k]||(b.appointmentDate||'')>(map[k].d||''))map[k]={n:b.fullName,p:b.phone,d:b.appointmentDate};});
+    exportSheet(Object.values(map).map(p=>({'الاسم':p.n,'الجوال':p.p,'آخر زيارة':p.d})), 'contacts');
+  } else if (t === 'audit') {
+    exportSheet(auditLog.map(a=>{const i=bookingInfo(a.bookingId, a.details);return{'الإجراء':a.action,'المستخدم':a.user,'التاريخ':a.timestamp,'اسم العميل':i.name,'وسيلة الاتصال':i.contact,'التفاصيل':a.details||''};}), 'audit');
+  } else if (t === 'conversion') {
+    const total=rows.length, att=rows.filter(b=>b.status==='حضر').length, ns=rows.filter(b=>b.status==='لم يحضر').length;
+    exportSheet([{'إجمالي':total,'حضر':att,'لم يحضر':ns,'نسبة التحويل':total?(att/total*100).toFixed(1)+'%':'0%'}], 'conversion');
+  }
+});
+
+// ---------- Render All ----------
+function renderAll() {
+  const rows = getFiltered();
+  renderKpis(rows);
+  renderSchedule(rows);
+  renderDoctor(rows);
+  renderRevenue(rows);
+  renderPayment(rows);
+  renderPatient(rows);
+  renderNoShow(rows);
+  renderContact(rows);
+  renderAudit();
+  renderConversion(rows);
+}
+
+populateDoctorFilter();
+renderAll();
+```
+
+`reports.html`
+
+```html
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BookMyDoctor - حجز العيادات</title>
+  <title>BookMyDoctor - لوحة التقارير</title>
   <link rel="icon" type="image/jpeg" href="logo.jpg" />
   <link rel="stylesheet" href="styles.css" />
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -16,341 +324,175 @@
         <img src="logo.jpg" alt="BookMyDoctor Logo" class="brand-logo" />
         <div class="brand-text">
           <h1>BookMyDoctor</h1>
-          <p class="brand-tagline">منصة حجز العيادات والأطباء</p>
+          <p class="brand-tagline">لوحة التقارير والإحصاءات</p>
         </div>
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a class="btn primary" href="reports.html">📊 لوحة التقارير</a>
-        <button class="btn ghost" id="toggleAdmin" type="button">⚙️ إعدادات المواعيد (مدير)</button>
+        <a class="btn ghost" href="index.html">← العودة للحجوزات</a>
       </div>
     </header>
 
-    <section class="card admin-panel" id="adminPanel" style="display:none;">
-      <h2>إعدادات ساعات العمل</h2>
-      <p class="muted">حدد ساعات العمل ومدة كل موعد. ستظهر الفترات المتاحة تلقائياً للمستخدم مع استبعاد المواعيد المحجوزة.</p>
-      <div class="grid-2">
-        <div class="field">
-          <label>بداية الدوام</label>
-          <input type="time" id="adminStart" value="09:00" />
-        </div>
-        <div class="field">
-          <label>نهاية الدوام</label>
-          <input type="time" id="adminEnd" value="17:00" />
-        </div>
-        <div class="field">
-          <label>بداية فترة الراحة (اختياري)</label>
-          <input type="time" id="adminBreakStart" />
-        </div>
-        <div class="field">
-          <label>نهاية فترة الراحة (اختياري)</label>
-          <input type="time" id="adminBreakEnd" />
-        </div>
-        <div class="field">
-          <label>مدة الموعد الواحد (دقيقة)</label>
-          <select id="adminSlotMinutes">
-            <option value="15">15</option>
-            <option value="20">20</option>
-            <option value="30" selected>30</option>
-            <option value="45">45</option>
-            <option value="60">60</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>أيام العمل</label>
-          <div class="days-row" id="adminDays">
-            <label><input type="checkbox" value="0" /> الأحد</label>
-            <label><input type="checkbox" value="1" /> الإثنين</label>
-            <label><input type="checkbox" value="2" /> الثلاثاء</label>
-            <label><input type="checkbox" value="3" /> الأربعاء</label>
-            <label><input type="checkbox" value="4" /> الخميس</label>
-            <label><input type="checkbox" value="5" /> الجمعة</label>
-            <label><input type="checkbox" value="6" /> السبت</label>
-          </div>
-        </div>
-      </div>
-      <div class="actions">
-        <button class="btn success" id="saveAdminBtn" type="button">💾 حفظ الإعدادات</button>
-        <button class="btn ghost" id="closeAdminBtn" type="button">إغلاق</button>
-      </div>
+    <!-- KPI Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">إجمالي الحجوزات</div><div class="kpi-value" id="kpiTotal">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">إجمالي الإيراد (ج.م)</div><div class="kpi-value" id="kpiRevenue">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">حضر</div><div class="kpi-value" id="kpiAttended">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">لم يحضر</div><div class="kpi-value" id="kpiNoShow">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">نسبة الحضور</div><div class="kpi-value" id="kpiConversion">0%</div></div>
+      <div class="kpi-card"><div class="kpi-label">نسبة عدم الحضور</div><div class="kpi-value" id="kpiNoShowRate">0%</div></div>
+    </section>
 
-      <hr style="margin:20px 0; border:none; border-top:1px dashed #ccc;" />
-      <h2>الأطباء والتخصصات</h2>
-      <p class="muted">أضف الأطباء وتخصصاتهم. ستظهر هذه القائمة في خطوات الحجز.</p>
-      <div class="grid-2">
-        <div class="field">
-          <label>اسم الطبيب</label>
-          <input type="text" id="newDoctorName" placeholder="مثال: د. أحمد السالم" />
+    <!-- Filters -->
+    <section class="card">
+      <h2>الفلاتر</h2>
+      <div class="bookings-tools">
+        <div class="field inline"><label>من تاريخ</label><input type="date" id="fFrom" /></div>
+        <div class="field inline"><label>إلى تاريخ</label><input type="date" id="fTo" /></div>
+        <div class="field inline"><label>الطبيب</label><select id="fDoctor"><option value="">الكل</option></select></div>
+        <div class="field inline"><label>طريقة الدفع</label><select id="fPayment">
+          <option value="">الكل</option><option value="نقدي">نقدي</option>
+          <option value="INSTAPAY">INSTAPAY</option><option value="محفظة إلكترونية">محفظة إلكترونية</option>
+        </select></div>
+        <div class="field inline"><label>الحالة</label><select id="fStatus">
+          <option value="">الكل</option><option value="مجدول">مجدول</option>
+          <option value="مؤكد">مؤكد</option><option value="حضر">حضر</option>
+          <option value="لم يحضر">لم يحضر</option><option value="ملغي">ملغي</option>
+        </select></div>
+        <div class="tools-actions">
+          <button class="btn ghost" id="clearF">مسح الفلاتر</button>
         </div>
-        <div class="field">
-          <label>التخصص</label>
-          <input type="text" id="newDoctorSpecialty" placeholder="مثال: باطنية" list="specialtySuggestions" />
-          <datalist id="specialtySuggestions">
-            <option value="باطنية"></option><option value="جراحة عامة"></option>
-            <option value="أطفال"></option><option value="نساء وولادة"></option>
-            <option value="عظام"></option><option value="جلدية"></option>
-            <option value="أسنان"></option><option value="قلب"></option>
-            <option value="مخ وأعصاب"></option><option value="صدرية"></option>
-            <option value="جهاز هضمي"></option><option value="كلى"></option>
-            <option value="أنف وأذن وحنجرة"></option><option value="عيون"></option>
-            <option value="مسالك بولية"></option><option value="أورام"></option>
-            <option value="أشعة"></option><option value="طوارئ"></option>
-            <option value="تخدير"></option><option value="علاج طبيعي"></option>
-            <option value="تحاليل طبية"></option><option value="تغذية علاجية"></option>
-            <option value="طب الأسرة"></option>
-          </datalist>
-        </div>
-      </div>
-      <div class="actions">
-        <button class="btn primary" id="addDoctorBtn" type="button">➕ إضافة طبيب</button>
-      </div>
-      <div class="table-wrap" style="margin-top:12px;">
-        <table id="doctorsTable">
-          <thead><tr><th>اسم الطبيب</th><th>التخصص</th><th>إجراء</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <p class="empty" id="emptyDoctorsMsg">لا يوجد أطباء بعد.</p>
       </div>
     </section>
 
-    <nav class="steps">
-      <button class="step active" data-step="1"><span>اسم</span> 👤</button>
-      <button class="step" data-step="2"><span>مرض</span> 🩺</button>
-      <button class="step" data-step="3"><span>تاريخ / طبيب</span> 📅</button>
-      <button class="step" data-step="4"><span>وقت / مدة</span> ⏱️</button>
-      <button class="step" data-step="5"><span>دفع / تأكيد</span> ✅</button>
+    <!-- Tabs -->
+    <nav class="report-tabs" id="tabs">
+      <button class="tab active" data-tab="schedule">📅 جدول المواعيد</button>
+      <button class="tab" data-tab="doctor">👨‍⚕️ أداء الأطباء</button>
+      <button class="tab" data-tab="revenue">💵 الإيرادات</button>
+      <button class="tab" data-tab="payment">💳 طرق الدفع</button>
+      <button class="tab" data-tab="patient">📊 نشاط المرضى</button>
+      <button class="tab" data-tab="noshow">❌ عدم الحضور</button>
+      <button class="tab" data-tab="contact">📞 جهات الاتصال</button>
+      <button class="tab" data-tab="audit">🔍 سجل التدقيق</button>
+      <button class="tab" data-tab="conversion">📊 نسبة التحويل</button>
     </nav>
 
-    <main class="layout">
-      <section class="card form-card">
-        <!-- Step 1 -->
-        <div class="step-panel active" data-panel="1">
-          <h2>البيانات الشخصية</h2>
-          <div class="grid-2">
-            <div class="field">
-              <label>الاسم الكامل *</label>
-              <input type="text" id="fullName" placeholder="أدخل الاسم الكامل" />
-            </div>
-            <div class="field">
-              <label>رقم الهوية / الإقامة *</label>
-              <input type="text" id="idNumber" placeholder="أدخل رقم الهوية أو الإقامة" />
-            </div>
-            <div class="field">
-              <label>تاريخ الميلاد *</label>
-              <input type="date" id="birthDate" />
-            </div>
-            <div class="field">
-              <label>رقم الجوال *</label>
-              <input type="tel" id="phone" placeholder="05xxxxxxxx" />
-            </div>
-            <div class="field">
-              <label>الجنس *</label>
-              <select id="gender">
-                <option value="">اختر الجنس</option>
-                <option value="ذكر">ذكر</option>
-                <option value="أنثى">أنثى</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>البريد الإلكتروني (اختياري)</label>
-              <input type="email" id="email" placeholder="example@email.com" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Step 2 -->
-        <div class="step-panel" data-panel="2">
-          <h2>المرض / التخصص</h2>
-          <div class="grid-2">
-            <div class="field">
-              <label>التخصص *</label>
-              <select id="specialty"><option value="">اختر التخصص</option></select>
-            </div>
-            <div class="field">
-              <label>وصف الحالة</label>
-              <textarea id="condition" rows="3" placeholder="اكتب وصفاً مختصراً للحالة"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- Step 3 -->
-        <div class="step-panel" data-panel="3">
-          <h2>اختيار التاريخ والطبيب</h2>
-          <div class="grid-2">
-            <div class="field">
-              <label>تاريخ الموعد *</label>
-              <input type="date" id="appointmentDate" />
-            </div>
-            <div class="field">
-              <label>اسم الطبيب *</label>
-              <select id="doctor"><option value="">اختر الطبيب</option></select>
-            </div>
-          </div>
-        </div>
-
-
-        <!-- Step 4 -->
-        <div class="step-panel" data-panel="4">
-          <h2>الوقت المتاح والمدة</h2>
-          <div class="grid-2">
-            <div class="field">
-              <label>الوقت *</label>
-              <input type="time" id="appointmentTime" />
-            </div>
-            <div class="field">
-              <label>المدة (دقيقة) *</label>
-              <select id="duration">
-                <option value="15">15</option>
-                <option value="30" selected>30</option>
-                <option value="45">45</option>
-                <option value="60">60</option>
-              </select>
-            </div>
-          </div>
-          <div class="field" style="margin-top:14px;">
-            <label>المواعيد المتاحة (اضغط لاختيار)</label>
-            <div class="time-slots" id="timeSlots"></div>
-          </div>
-        </div>
-
-        <!-- Step 5 -->
-        <div class="step-panel" data-panel="5">
-          <h2>الدفع وتأكيد الحجز</h2>
-          <div class="grid-2">
-            <div class="field">
-              <label>طريقة الدفع</label>
-              <select id="paymentMethod">
-                <option value="نقدي">نقدي (Cash)</option>
-                <option value="INSTAPAY">INSTAPAY</option>
-                <option value="محفظة إلكترونية">محفظة إلكترونية (Wallet)</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>الرسوم (جنيه مصري)</label>
-              <input type="number" id="amount" placeholder="مثال: 200" min="0" />
-            </div>
-            <div class="field">
-              <label>حالة الحجز</label>
-              <select id="status">
-                <option value="مجدول">مجدول</option>
-                <option value="مؤكد">مؤكد</option>
-                <option value="حضر">حضر</option>
-                <option value="لم يحضر">لم يحضر</option>
-                <option value="ملغي">ملغي</option>
-              </select>
-            </div>
-          </div>
-          <div class="field" style="margin-top:14px;">
-            <label>ملاحظات</label>
-            <textarea id="notes" rows="3" placeholder="ملاحظات إضافية"></textarea>
-          </div>
-          <p class="muted" style="margin-top:10px;">راجع التفاصيل في الملخص جانباً ثم اضغط حفظ.</p>
-        </div>
-
-        <div class="actions">
-          <button class="btn ghost" id="prevBtn">السابق</button>
-          <button class="btn primary" id="nextBtn">التالي →</button>
-          <button class="btn success" id="saveBtn" style="display:none">💾 حفظ الحجز</button>
-        </div>
-      </section>
-
-      <aside class="card summary-card">
-        <div class="summary-header">ملخص الحجز</div>
-        <ul class="summary-list">
-          <li><span class="label">الاسم:</span> <span id="sName">-</span></li>
-          <li><span class="label">المرض:</span> <span id="sCondition">-</span></li>
-          <li><span class="label">التاريخ:</span> <span id="sDate">-</span></li>
-          <li><span class="label">الوقت / المدة:</span> <span id="sTime">-</span></li>
-          <li><span class="label">العيادة / الطبيب:</span> <span id="sDoctor">-</span></li>
-          <li><span class="label">الدفع:</span> <span id="sPayment">-</span></li>
-        </ul>
-        <div class="summary-note" id="summaryNote">📅 لم يتم اختيار موعد بعد</div>
-      </aside>
-    </main>
-
-    <section class="bookings card">
-      <div class="bookings-header">
-        <h2>سجل الحجوزات</h2>
-        <div class="bookings-tools">
-          <div class="field inline">
-            <label for="searchInput">بحث</label>
-            <input type="search" id="searchInput" placeholder="🔍 بالاسم أو الهاتف" />
-          </div>
-          <div class="field inline">
-            <label for="searchDateFrom">من تاريخ</label>
-            <input type="date" id="searchDateFrom" />
-          </div>
-          <div class="field inline">
-            <label for="searchDateTo">إلى تاريخ</label>
-            <input type="date" id="searchDateTo" />
-          </div>
-          <div class="field inline">
-            <label for="searchStatus">الحالة</label>
-            <select id="searchStatus">
-              <option value="">الكل</option>
-              <option value="مجدول">مجدول</option>
-              <option value="مؤكد">مؤكد</option>
-              <option value="حضر">حضر</option>
-              <option value="لم يحضر">لم يحضر</option>
-              <option value="ملغي">ملغي</option>
-            </select>
-          </div>
-          <div class="tools-actions">
-            <button class="btn ghost" id="clearFiltersBtn" type="button">مسح الفلاتر</button>
-            <button class="btn primary" id="exportExcelBtn" type="button">⬇️ تصدير Excel</button>
-            <button class="btn ghost" id="importExcelBtn" type="button">⬆️ استيراد Excel</button>
-            <input type="file" id="importExcelFile" accept=".xlsx,.xls,.csv" style="display:none" />
-          </div>
+    <!-- 1. Appointment Schedule -->
+    <section class="card report-panel active" data-panel="schedule">
+      <div class="report-header">
+        <h2>جدول المواعيد (Appointment Schedule)</h2>
+        <div>
+          <select id="scheduleGroup">
+            <option value="day">يومي</option>
+            <option value="week">أسبوعي</option>
+            <option value="month">شهري</option>
+          </select>
+          <button class="btn primary" data-export="schedule">⬇️ تصدير Excel</button>
         </div>
       </div>
-      <div class="table-wrap">
-        <table id="bookingsTable">
-          <thead>
-            <tr>
-              <th>الاسم</th>
-              <th>الجوال</th>
-              <th>الطبيب</th>
-              <th>التاريخ</th>
-              <th>الوقت</th>
-              <th>الدفع</th>
-              <th>الحالة</th>
-              <th>إجراءات</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <p class="empty" id="emptyMsg">لا توجد حجوزات بعد.</p>
-      </div>
+      <div class="chart-wrap"><canvas id="scheduleChart"></canvas></div>
+      <div class="table-wrap"><table id="scheduleTable">
+        <thead><tr><th>التاريخ</th><th>الطبيب</th><th>عدد المواعيد</th></tr></thead>
+        <tbody></tbody></table></div>
     </section>
 
-    <section class="available-section">
-      <button class="btn primary big" id="showAvailableBtn" type="button">📅 المواعيد المتاحة</button>
+    <!-- 2. Doctor Performance -->
+    <section class="card report-panel" data-panel="doctor">
+      <div class="report-header">
+        <h2>أداء الأطباء (Doctor Performance)</h2>
+        <button class="btn primary" data-export="doctor">⬇️ تصدير Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="doctorChart"></canvas></div>
+      <div class="table-wrap"><table id="doctorTable">
+        <thead><tr><th>الطبيب</th><th>عدد المرضى</th><th>الإيرادات (ج.م)</th></tr></thead>
+        <tbody></tbody></table></div>
     </section>
 
-    <div class="modal-overlay" id="availableModal" style="display:none;">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h2>المواعيد المتاحة</h2>
-          <button class="btn ghost" id="closeAvailableBtn" type="button">✖</button>
-        </div>
-        <div class="modal-controls">
-          <div class="field">
-            <label>عدد الأيام القادمة</label>
-            <select id="availableDays">
-              <option value="7" selected>7 أيام</option>
-              <option value="14">14 يوم</option>
-              <option value="30">30 يوم</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>تصفية بالطبيب (اختياري)</label>
-            <input type="text" id="availableDoctorFilter" placeholder="اسم الطبيب" />
-          </div>
-        </div>
-        <div class="available-list" id="availableList"></div>
+    <!-- 3. Revenue -->
+    <section class="card report-panel" data-panel="revenue">
+      <div class="report-header">
+        <h2>الإيرادات (Revenue Report)</h2>
+        <button class="btn primary" data-export="revenue">⬇️ تصدير Excel</button>
       </div>
-    </div>
+      <div class="chart-wrap"><canvas id="revenueChart"></canvas></div>
+      <div class="table-wrap"><table id="revenueTable">
+        <thead><tr><th>التاريخ</th><th>الطبيب</th><th>إجمالي الإيراد (ج.م)</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 4. Payment Methods -->
+    <section class="card report-panel" data-panel="payment">
+      <div class="report-header">
+        <h2>طرق الدفع (Payment Methods)</h2>
+        <button class="btn primary" data-export="payment">⬇️ تصدير Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="paymentChart"></canvas></div>
+      <div class="table-wrap"><table id="paymentTable">
+        <thead><tr><th>طريقة الدفع</th><th>العدد</th><th>الإجمالي (ج.م)</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 5. Patient Activity -->
+    <section class="card report-panel" data-panel="patient">
+      <div class="report-header">
+        <h2>نشاط المرضى (Patient Activity)</h2>
+        <button class="btn primary" data-export="patient">⬇️ تصدير Excel</button>
+      </div>
+      <div class="table-wrap"><table id="patientTable">
+        <thead><tr><th>اسم المريض</th><th>الجوال</th><th>عدد الزيارات</th><th>النوع</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 6. No-Show -->
+    <section class="card report-panel" data-panel="noshow">
+      <div class="report-header">
+        <h2>عدم الحضور (No-Show Report)</h2>
+        <button class="btn primary" data-export="noshow">⬇️ تصدير Excel</button>
+      </div>
+      <div class="table-wrap"><table id="noshowTable">
+        <thead><tr><th>اسم المريض</th><th>الطبيب</th><th>التاريخ</th><th>الحالة</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 7. Contact -->
+    <section class="card report-panel" data-panel="contact">
+      <div class="report-header">
+        <h2>قائمة جهات الاتصال (Patient Contact List)</h2>
+        <button class="btn primary" data-export="contact">⬇️ تصدير Excel</button>
+      </div>
+      <div class="table-wrap"><table id="contactTable">
+        <thead><tr><th>اسم المريض</th><th>الجوال</th><th>آخر زيارة</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 8. Audit -->
+    <section class="card report-panel" data-panel="audit">
+      <div class="report-header">
+        <h2>سجل التدقيق (Booking Audit)</h2>
+        <button class="btn primary" data-export="audit">⬇️ تصدير Excel</button>
+      </div>
+      <div class="table-wrap"><table id="auditTable">
+        <thead><tr><th>الإجراء</th><th>المستخدم</th><th>التاريخ</th><th>اسم العميل</th><th>وسيلة الاتصال</th><th>التفاصيل</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 9. Conversion -->
+    <section class="card report-panel" data-panel="conversion">
+      <div class="report-header">
+        <h2>نسبة التحويل (Booking Conversion)</h2>
+        <button class="btn primary" data-export="conversion">⬇️ تصدير Excel</button>
+      </div>
+      <div class="kpi-grid" style="margin:14px 0;">
+        <div class="kpi-card"><div class="kpi-label">إجمالي الحجوزات</div><div class="kpi-value" id="cTotal">0</div></div>
+        <div class="kpi-card"><div class="kpi-label">حضر</div><div class="kpi-value" id="cAttended">0</div></div>
+        <div class="kpi-card"><div class="kpi-label">لم يحضر</div><div class="kpi-value" id="cNoShow">0</div></div>
+        <div class="kpi-card"><div class="kpi-label">نسبة التحويل</div><div class="kpi-value" id="cRate">0%</div></div>
+      </div>
+      <div class="chart-wrap"><canvas id="conversionChart"></canvas></div>
+    </section>
   </div>
 
-  <script src="script.js"></script>
+  <script src="reports.js"></script>
 </body>
 </html>
+```
