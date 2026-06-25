@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BookMyDoctor - لوحة التقارير</title>
+  <link rel="icon" type="image/jpeg" href="logo.jpg" />
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="page-header app-header">
+      <div class="brand">
+        <img src="logo.jpg" alt="BookMyDoctor Logo" class="brand-logo" />
+        <div class="brand-text">
+          <h1>BookMyDoctor</h1>
+          <p class="brand-tagline">لوحة التقارير والإحصاءات</p>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn ghost" href="home.html">🏠 الرئيسية</a>
+        <a class="btn ghost" href="index.html">← العودة للحجوزات</a>
+      </div>
+    </header>
+
+    <!-- KPI Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">إجمالي الحجوزات</div><div class="kpi-value" id="kpiTotal">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">إجمالي الإيراد (ج.م)</div><div class="kpi-value" id="kpiRevenue">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">حضر</div><div class="kpi-value" id="kpiAttended">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">لم يحضر</div><div class="kpi-value" id="kpiNoShow">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">نسبة الحضور</div><div class="kpi-value" id="kpiConversion">0%</div></div>
+      <div class="kpi-card"><div class="kpi-label">نسبة عدم الحضور</div><div class="kpi-value" id="kpiNoShowRate">0%</div></div>
+    </section>
+
+    <!-- Filters -->
+    <section class="card">
+      <h2>الفلاتر</h2>
+      <div class="bookings-tools">
+        <div class="field inline"><label>من تاريخ</label><input type="date" id="fFrom" /></div>
+        <div class="field inline"><label>إلى تاريخ</label><input type="date" id="fTo" /></div>
+        <div class="field inline"><label>الطبيب</label><select id="fDoctor"><option value="">الكل</option></select></div>
+        <div class="field inline"><label>طريقة الدفع</label><select id="fPayment">
+          <option value="">الكل</option><option value="نقدي">نقدي</option>
+          <option value="INSTAPAY">INSTAPAY</option><option value="محفظة إلكترونية">محفظة إلكترونية</option>
+        </select></div>
+        <div class="field inline"><label>الحالة</label><select id="fStatus">
+          <option value="">الكل</option><option value="مجدول">مجدول</option>
+          <option value="مؤكد">مؤكد</option><option value="حضر">حضر</option>
+          <option value="لم يحضر">لم يحضر</option><option value="ملغي">ملغي</option>
+        </select></div>
+        <div class="tools-actions">
+          <button class="btn ghost" id="clearF">مسح الفلاتر</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tabs -->
+    <nav class="report-tabs" id="tabs">
+      <button class="tab active" data-tab="schedule">📅 جدول المواعيد</button>
+      <button class="tab" data-tab="doctor">👨‍⚕️ أداء الأطباء</button>
+      <button class="tab" data-tab="revenue">💵 الإيرادات</button>
+      <button class="tab" data-tab="payment">💳 طرق الدفع</button>
+      <button class="tab" data-tab="patient">📊 نشاط المرضى</button>
+      <button class="tab" data-tab="noshow">❌ عدم الحضور</button>
+      <button class="tab" data-tab="contact">📞 جهات الاتصال</button>
+      <button class="tab" data-tab="audit">🔍 سجل التدقيق</button>
+      <button class="tab" data-tab="conversion">📊 نسبة التحويل</button>
+    </nav>
+
+    <!-- 1. Appointment Schedule -->
+    <section class="card report-panel active" data-panel="schedule">
+      <div class="report-header">
+        <h2>جدول المواعيد (Appointment Schedule)</h2>
+        <div>
+          <select id="scheduleGroup">
+            <option value="day">يومي</option>
+            <option value="week">أسبوعي</option>
+            <option value="month">شهري</option>
+          </select>
+          <button class="btn primary" data-export="schedule">⬇️ تصدير Excel</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="scheduleChart"></canvas></div>
+      <div class="table-wrap"><table id="scheduleTable">
+        <thead><tr><th>التاريخ</th><th>الطبيب</th><th>عدد المواعيد</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 2. Doctor Performance -->
+    <section class="card report-panel" data-panel="doctor">
+      <div class="report-header">
+        <h2>أداء الأطباء (Doctor Performance)</h2>
+        <button class="btn primary" data-export="doctor">⬇️ تصدير Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="doctorChart"></canvas></div>
+      <div class="table-wrap"><table id="doctorTable">
+        <thead><tr><th>الطبيب</th><th>عدد المرضى</th><th>الإيرادات (ج.م)</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 3. Revenue -->
+    <section class="card report-panel" data-panel="revenue">
+      <div class="report-header">
+        <h2>الإيرادات (Revenue Report)</h2>
+        <button class="btn primary" data-export="revenue">⬇️ تصدير Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="revenueChart"></canvas></div>
+      <div class="table-wrap"><table id="revenueTable">
+        <thead><tr><th>التاريخ</th><th>الطبيب</th><th>إجمالي الإيراد (ج.م)</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 4. Payment Methods -->
+    <section class="card report-panel" data-panel="payment">
+      <div class="report-header">
+        <h2>طرق الدفع (Payment Methods)</h2>
+        <button class="btn primary" data-export="payment">⬇️ تصدير Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="paymentChart"></canvas></div>
+      <div class="table-wrap"><table id="paymentTable">
+        <thead><tr><th>طريقة الدفع</th><th>العدد</th><th>الإجمالي (ج.م)</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 5. Patient Activity -->
+    <section class="card report-panel" data-panel="patient">
+      <div class="report-header">
+        <h2>نشاط المرضى (Patient Activity)</h2>
+        <button class="btn primary" data-export="patient">⬇️ تصدير Excel</button>
+      </div>
+      <div class="table-wrap"><table id="patientTable">
+        <thead><tr><th>اسم المريض</th><th>الجوال</th><th>عدد الزيارات</th><th>النوع</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 6. No-Show -->
+    <section class="card report-panel" data-panel="noshow">
+      <div class="report-header">
+        <h2>عدم الحضور (No-Show Report)</h2>
+        <button class="btn primary" data-export="noshow">⬇️ تصدير Excel</button>
+      </div>
+      <div class="table-wrap"><table id="noshowTable">
+        <thead><tr><th>اسم المريض</th><th>الطبيب</th><th>التاريخ</th><th>الحالة</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 7. Contact -->
+    <section class="card report-panel" data-panel="contact">
+      <div class="report-header">
+        <h2>قائمة جهات الاتصال (Patient Contact List)</h2>
+        <button class="btn primary" data-export="contact">⬇️ تصدير Excel</button>
+      </div>
+      <div class="table-wrap"><table id="contactTable">
+        <thead><tr><th>اسم المريض</th><th>الجوال</th><th>آخر زيارة</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 8. Audit -->
+    <section class="card report-panel" data-panel="audit">
+      <div class="report-header">
+        <h2>سجل التدقيق (Booking Audit)</h2>
+        <button class="btn primary" data-export="audit">⬇️ تصدير Excel</button>
+      </div>
+      <div class="table-wrap"><table id="auditTable">
+        <thead><tr><th>الإجراء</th><th>المستخدم</th><th>التاريخ</th><th>اسم العميل</th><th>وسيلة الاتصال</th><th>التفاصيل</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+
+    <!-- 9. Conversion -->
+    <section class="card report-panel" data-panel="conversion">
+      <div class="report-header">
+        <h2>نسبة التحويل (Booking Conversion)</h2>
+        <button class="btn primary" data-export="conversion">⬇️ تصدير Excel</button>
+      </div>
+      <div class="kpi-grid" style="margin:14px 0;">
+        <div class="kpi-card"><div class="kpi-label">إجمالي الحجوزات</div><div class="kpi-value" id="cTotal">0</div></div>
+        <div class="kpi-card"><div class="kpi-label">حضر</div><div class="kpi-value" id="cAttended">0</div></div>
+        <div class="kpi-card"><div class="kpi-label">لم يحضر</div><div class="kpi-value" id="cNoShow">0</div></div>
+        <div class="kpi-card"><div class="kpi-label">نسبة التحويل</div><div class="kpi-value" id="cRate">0%</div></div>
+      </div>
+      <div class="chart-wrap"><canvas id="conversionChart"></canvas></div>
+    </section>
+  </div>
+
+  <script src="reports.js"></script>
+</body>
+</html>
