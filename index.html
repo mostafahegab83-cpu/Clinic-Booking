@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BookMyDoctor - حجز العيادات</title>
+  <link rel="icon" type="image/jpeg" href="logo.jpg" />
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="page-header app-header">
+      <div class="brand">
+        <img src="logo.jpg" alt="BookMyDoctor Logo" class="brand-logo" />
+        <div class="brand-text">
+          <h1>BookMyDoctor</h1>
+          <p class="brand-tagline">منصة حجز العيادات والأطباء</p>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn ghost" href="home.html">🏠 الرئيسية</a>
+        <a class="btn primary" href="reports.html">📊 لوحة التقارير</a>
+        <a class="btn ghost" href="admin.html">⚙️ لوحة المدير</a>
+      </div>
+    </header>
+
+
+
+    <nav class="steps">
+      <button class="step active" data-step="1"><span>اسم</span> 👤</button>
+      <button class="step" data-step="2"><span>مرض</span> 🩺</button>
+      <button class="step" data-step="3"><span>تاريخ / طبيب</span> 📅</button>
+      <button class="step" data-step="4"><span>وقت / مدة</span> ⏱️</button>
+      <button class="step" data-step="5"><span>دفع / تأكيد</span> ✅</button>
+    </nav>
+
+    <main class="layout">
+      <section class="card form-card">
+        <!-- Step 1 -->
+        <div class="step-panel active" data-panel="1">
+          <h2>البيانات الشخصية</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>الاسم الكامل *</label>
+              <input type="text" id="fullName" placeholder="أدخل الاسم الكامل" />
+            </div>
+            <div class="field">
+              <label>رقم الهوية / الإقامة *</label>
+              <input type="text" id="idNumber" placeholder="أدخل رقم الهوية أو الإقامة" />
+            </div>
+            <div class="field">
+              <label>تاريخ الميلاد *</label>
+              <input type="date" id="birthDate" />
+            </div>
+            <div class="field">
+              <label>رقم الجوال *</label>
+              <input type="tel" id="phone" placeholder="05xxxxxxxx" />
+            </div>
+            <div class="field">
+              <label>الجنس *</label>
+              <select id="gender">
+                <option value="">اختر الجنس</option>
+                <option value="ذكر">ذكر</option>
+                <option value="أنثى">أنثى</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>البريد الإلكتروني (اختياري)</label>
+              <input type="email" id="email" placeholder="example@email.com" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-panel" data-panel="2">
+          <h2>المرض / التخصص</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>التخصص *</label>
+              <select id="specialty"><option value="">اختر التخصص</option></select>
+            </div>
+            <div class="field">
+              <label>وصف الحالة</label>
+              <textarea id="condition" rows="3" placeholder="اكتب وصفاً مختصراً للحالة"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-panel" data-panel="3">
+          <h2>اختيار التاريخ والطبيب</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>تاريخ الموعد *</label>
+              <input type="date" id="appointmentDate" />
+            </div>
+            <div class="field">
+              <label>اسم الطبيب *</label>
+              <select id="doctor"><option value="">اختر الطبيب</option></select>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Step 4 -->
+        <div class="step-panel" data-panel="4">
+          <h2>الوقت المتاح والمدة</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>الوقت *</label>
+              <input type="time" id="appointmentTime" />
+            </div>
+            <div class="field">
+              <label>المدة (دقيقة) *</label>
+              <select id="duration">
+                <option value="15">15</option>
+                <option value="30" selected>30</option>
+                <option value="45">45</option>
+                <option value="60">60</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin-top:14px;">
+            <label>المواعيد المتاحة (اضغط لاختيار)</label>
+            <div class="time-slots" id="timeSlots"></div>
+          </div>
+        </div>
+
+        <!-- Step 5 -->
+        <div class="step-panel" data-panel="5">
+          <h2>الدفع وتأكيد الحجز</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label>طريقة الدفع</label>
+              <select id="paymentMethod">
+                <option value="نقدي">نقدي (Cash)</option>
+                <option value="INSTAPAY">INSTAPAY</option>
+                <option value="محفظة إلكترونية">محفظة إلكترونية (Wallet)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>الرسوم (جنيه مصري)</label>
+              <input type="number" id="amount" placeholder="مثال: 200" min="0" />
+            </div>
+            <div class="field">
+              <label>حالة الحجز</label>
+              <select id="status">
+                <option value="مجدول">مجدول</option>
+                <option value="مؤكد">مؤكد</option>
+                <option value="حضر">حضر</option>
+                <option value="لم يحضر">لم يحضر</option>
+                <option value="ملغي">ملغي</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin-top:14px;">
+            <label>ملاحظات</label>
+            <textarea id="notes" rows="3" placeholder="ملاحظات إضافية"></textarea>
+          </div>
+          <p class="muted" style="margin-top:10px;">راجع التفاصيل في الملخص جانباً ثم اضغط حفظ.</p>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" id="prevBtn">السابق</button>
+          <button class="btn primary" id="nextBtn">التالي →</button>
+          <button class="btn success" id="saveBtn" style="display:none">💾 حفظ الحجز</button>
+        </div>
+      </section>
+
+      <aside class="card summary-card">
+        <div class="summary-header">ملخص الحجز</div>
+        <ul class="summary-list">
+          <li><span class="label">الاسم:</span> <span id="sName">-</span></li>
+          <li><span class="label">المرض:</span> <span id="sCondition">-</span></li>
+          <li><span class="label">التاريخ:</span> <span id="sDate">-</span></li>
+          <li><span class="label">الوقت / المدة:</span> <span id="sTime">-</span></li>
+          <li><span class="label">العيادة / الطبيب:</span> <span id="sDoctor">-</span></li>
+          <li><span class="label">الدفع:</span> <span id="sPayment">-</span></li>
+        </ul>
+        <div class="summary-note" id="summaryNote">📅 لم يتم اختيار موعد بعد</div>
+      </aside>
+    </main>
+
+    <section class="bookings card">
+      <div class="bookings-header">
+        <h2>سجل الحجوزات</h2>
+        <div class="bookings-tools">
+          <div class="field inline">
+            <label for="searchInput">بحث</label>
+            <input type="search" id="searchInput" placeholder="🔍 بالاسم أو الهاتف" />
+          </div>
+          <div class="field inline">
+            <label for="searchDateFrom">من تاريخ</label>
+            <input type="date" id="searchDateFrom" />
+          </div>
+          <div class="field inline">
+            <label for="searchDateTo">إلى تاريخ</label>
+            <input type="date" id="searchDateTo" />
+          </div>
+          <div class="field inline">
+            <label for="searchStatus">الحالة</label>
+            <select id="searchStatus">
+              <option value="">الكل</option>
+              <option value="مجدول">مجدول</option>
+              <option value="مؤكد">مؤكد</option>
+              <option value="حضر">حضر</option>
+              <option value="لم يحضر">لم يحضر</option>
+              <option value="ملغي">ملغي</option>
+            </select>
+          </div>
+          <div class="tools-actions">
+            <button class="btn ghost" id="clearFiltersBtn" type="button">مسح الفلاتر</button>
+            <button class="btn primary" id="exportExcelBtn" type="button">⬇️ تصدير Excel</button>
+            <button class="btn ghost" id="importExcelBtn" type="button">⬆️ استيراد Excel</button>
+            <input type="file" id="importExcelFile" accept=".xlsx,.xls,.csv" style="display:none" />
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="bookingsTable">
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>الجوال</th>
+              <th>الطبيب</th>
+              <th>التاريخ</th>
+              <th>الوقت</th>
+              <th>الدفع</th>
+              <th>الحالة</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="emptyMsg">لا توجد حجوزات بعد.</p>
+      </div>
+    </section>
+
+    <section class="available-section">
+      <button class="btn primary big" id="showAvailableBtn" type="button">📅 المواعيد المتاحة</button>
+    </section>
+
+    <div class="modal-overlay" id="availableModal" style="display:none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>المواعيد المتاحة</h2>
+          <button class="btn ghost" id="closeAvailableBtn" type="button">✖</button>
+        </div>
+        <div class="modal-controls">
+          <div class="field">
+            <label>عدد الأيام القادمة</label>
+            <select id="availableDays">
+              <option value="7" selected>7 أيام</option>
+              <option value="14">14 يوم</option>
+              <option value="30">30 يوم</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>تصفية بالطبيب (اختياري)</label>
+            <select id="availableDoctorFilter">
+              <option value="">كل الأطباء</option>
+            </select>
+          </div>
+        </div>
+        <div class="available-list" id="availableList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
